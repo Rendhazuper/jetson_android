@@ -25,6 +25,7 @@ assets/models/**/*.onnx
 # Gallery/embedding biometrik — TIDAK boleh masuk repo publik.
 # File ini berisi vektor wajah orang sungguhan. Sediakan lewat kanal privat.
 assets/gallery/
+assets/raw-faces-data/
 assets/encodings.json
 *.pkl
 *.bin
@@ -38,3 +39,4 @@ assets/encodings.json
 # --- OS ---
 .DS_Store
 Thumbs.db
+/assets/raw-faces-data/

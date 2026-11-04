@@ -20,8 +20,13 @@ class PersonApiResponse {
 /// Layanan pengiriman ID personal ke API layanan perkuliahan.
 /// Padanan dari `services/person_api_service.py`.
 class PersonApiService {
+  PersonApiService({String? apiUrl})
+    : _apiUrl = apiUrl ?? AppConfig.personInfoApiUrl;
+
+  final String _apiUrl;
+
   Future<PersonApiResponse> sendPersonId(String idPersonal) async {
-    final url = AppConfig.personInfoApiUrl;
+    final url = _apiUrl;
     if (url.isEmpty) {
       return PersonApiResponse(
         ok: true,
@@ -29,8 +34,9 @@ class PersonApiService {
         message: 'Mode demo offline (URL API belum diset).',
         data: {
           'streams': {
-            'nama': idPersonal,
-            'nomorpegawai': idPersonal,
+            // ID personal rahasia: jangan dipantulkan ke UI pada mode demo.
+            'nama': 'Pengguna Demo',
+            'nomorpegawai': '-',
             'nama_unit_kerja': 'Demo Presensi',
             'waktu': DateTime.now().toString().substring(11, 19),
           }

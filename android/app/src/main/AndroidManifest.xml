@@ -11,7 +11,7 @@
 
     <!-- Model ONNX disimpan sebagai asset (no-compress), tidak diekstrak ke storage. -->
     <application
-        android:label="Presensi Wajah UNEJ"
+        android:label="VISION UNEJ"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"

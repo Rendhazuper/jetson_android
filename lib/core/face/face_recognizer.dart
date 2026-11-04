@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:onnxruntime/onnxruntime.dart';
 import '../config/app_config.dart';
+import 'recognition_voter.dart';
 
 class RecognitionResult {
   const RecognitionResult({
@@ -12,6 +13,7 @@ class RecognitionResult {
     required this.confidence,
     required this.distance,
     required this.threshold,
+    this.isPending = false,
   });
 
   final String? name;
@@ -19,6 +21,9 @@ class RecognitionResult {
   final double confidence;
   final double distance;
   final double threshold;
+
+  /// `true` bila jarak lolos threshold tetapi suara berurutan belum cukup.
+  final bool isPending;
 }
 
 /// Modul pengenal wajah SFace — padanan langsung dari `core/recognizer.py`.
@@ -32,6 +37,7 @@ class FaceRecognizer {
   final List<List<double>> _knownEncodings = [];
   final List<String> _knownNames = [];
   final Set<String> _confirmedNames = {};
+  final RecognitionVoter _voter = RecognitionVoter(AppConfig.recognitionVotes);
 
   bool get isReady => _session != null && _knownEncodings.isNotEmpty;
   int get knownCount => _knownNames.length;
@@ -139,6 +145,7 @@ class FaceRecognizer {
     }
 
     if (bestDistance > dynamicThreshold) {
+      _voter.reset();
       return RecognitionResult(
         name: null,
         closestName: _knownNames[bestIndex],
@@ -149,6 +156,16 @@ class FaceRecognizer {
     }
 
     final name = _knownNames[bestIndex];
+    if (!_voter.vote(name)) {
+      return RecognitionResult(
+        name: null,
+        closestName: name,
+        confidence: baseConfidence,
+        distance: bestDistance,
+        threshold: dynamicThreshold,
+        isPending: true,
+      );
+    }
     _confirmedNames.add(name);
 
     return RecognitionResult(
@@ -159,6 +176,9 @@ class FaceRecognizer {
       threshold: dynamicThreshold,
     );
   }
+
+  /// Memutus rangkaian suara, dipanggil saat tidak ada wajah yang bisa dinilai.
+  void resetVotes() => _voter.reset();
 
   static double _cosineDistance(List<double> a, List<double> b) {
     double dot = 0.0;

@@ -12,7 +12,7 @@ class FacePresensiApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Presensi Wajah UNEJ',
+      title: 'VISION UNEJ',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1E1E1E)),
