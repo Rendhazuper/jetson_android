@@ -57,5 +57,25 @@ void main() {
       expect(find.text('Gagal'), findsOneWidget);
       expect(find.text('Berhasil'), findsNothing);
     });
+
+    testWidgets('entri tamu memakai label Tamu, bukan Gagal', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          const AttendanceLogTile(
+            zone: 'WIB',
+            entry: DailyLogEntry(
+              time: '08:05:00',
+              idPegawai: '-',
+              nama: 'Tamu Uji',
+              status: 'Tamu',
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Tamu'), findsOneWidget);
+      expect(find.text('Tamu Uji'), findsOneWidget);
+      expect(find.text('Gagal'), findsNothing);
+    });
   });
 }

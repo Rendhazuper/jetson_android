@@ -55,6 +55,54 @@ class RapatSession {
   };
 }
 
+/// Status pencatatan `hadir`: `hadir` untuk peserta, `tamu` untuk yang bukan
+/// peserta, `sudah` bila orang tersebut sudah tercatat sebelumnya.
+enum RapatHadirStatus { hadir, tamu, sudah }
+
+/// Hasil pencatatan `hadir` dari `streams`. Data identitas di sini bersifat
+/// rahasia: jangan dicatat ke log.
+class RapatHadir {
+  const RapatHadir({
+    required this.status,
+    this.nama = '-',
+    this.nomorPegawai = '-',
+    this.unit = '-',
+    this.waktu,
+    this.terlambat = false,
+  });
+
+  final RapatHadirStatus status;
+  final String nama;
+  final String nomorPegawai;
+  final String unit;
+
+  /// Waktu tercatat dari server. Untuk `sudah`, ini jam pertama kali tercatat.
+  final DateTime? waktu;
+  final bool terlambat;
+
+  /// Membaca `streams` dari jawaban `hadir`. Mengembalikan `null` bila `status`
+  /// tidak dikenal.
+  static RapatHadir? fromStreams(Map<String, dynamic>? streams) {
+    if (streams == null) return null;
+    final status = switch (streams['status']?.toString()) {
+      'hadir' => RapatHadirStatus.hadir,
+      'tamu' => RapatHadirStatus.tamu,
+      'sudah' => RapatHadirStatus.sudah,
+      _ => null,
+    };
+    if (status == null) return null;
+
+    return RapatHadir(
+      status: status,
+      nama: streams['nama']?.toString() ?? '-',
+      nomorPegawai: streams['nomorpegawai']?.toString() ?? '-',
+      unit: streams['nama_unit_kerja']?.toString() ?? '-',
+      waktu: DateTime.tryParse(streams['waktu']?.toString() ?? '')?.toLocal(),
+      terlambat: streams['terlambat'] == true,
+    );
+  }
+}
+
 class RapatApiResponse {
   const RapatApiResponse({
     required this.ok,
@@ -91,6 +139,13 @@ class RapatApiService {
 
   Future<RapatApiResponse> info(String idsesi) =>
       _post('info', {'idsesi': idsesi});
+
+  /// Mencatat kehadiran dari wajah yang dikenali. `titik` sengaja tidak dikirim,
+  /// supaya server memilih sendiri (scan pertama Datang, berikutnya Pulang).
+  Future<RapatApiResponse> hadir({
+    required String idsesi,
+    required String idpersonal,
+  }) => _post('hadir', {'idsesi': idsesi, 'idpersonal': idpersonal});
 
   Future<RapatApiResponse> akhiri({
     required String idsesi,

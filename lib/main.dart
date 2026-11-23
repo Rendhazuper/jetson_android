@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'core/theme/app_palette.dart';
 import 'core/theme/theme_controller.dart';
+import 'presentation/screens/camera_permission_gate.dart';
 import 'presentation/screens/splash_screen.dart';
 
 Future<void> main() async {
@@ -35,6 +36,10 @@ class FacePresensiApp extends StatelessWidget {
           fontFamily: 'Helvetica',
         ),
         themeMode: ThemeController.instance.mode,
+        // Gerbang izin kamera berada di atas Navigator, jadi semua layar terkunci
+        // sampai izin kamera diberikan.
+        builder: (context, child) =>
+            CameraPermissionGate(child: child ?? const SizedBox.shrink()),
         home: const SplashScreen(),
       ),
     );

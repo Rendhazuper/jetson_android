@@ -66,8 +66,8 @@ class AppConfig {
 
   // ===== API PRESENSI RAPAT (docs/api docs/API_UNEJ_VISION.md) =====
   // Base URL tanpa garis miring di akhir. Timpa lewat
-  // `--dart-define=RAPAT_API_BASE_URL=<url>`. Nilai default mengasumsikan host
-  // yang sama dengan person API; pastikan sesuai dengan server rapat.
+  // `--dart-define=RAPAT_API_BASE_URL=<url>`. Nilai default adalah host server
+  // rapat yang sudah dikonfirmasi (api-sister.unej.ac.id, sama dengan person API).
   static const String rapatApiBaseUrl = String.fromEnvironment(
     'RAPAT_API_BASE_URL',
     defaultValue: 'https://api-sister.unej.ac.id/perkuliahan/vision/rapat',

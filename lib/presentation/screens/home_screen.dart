@@ -49,11 +49,18 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isProcessingFrame = false;
   DateTime _lastProcessTime = DateTime.now();
 
+  // Keadaan menunggu, dan jeda sebelum hasil terakhir dikosongkan.
+  static const _idleTitle = 'MENUNGGU PENGENALAN';
+  static const _idleMessage = 'Arahkan wajah ke kamera untuk presensi.';
+  static const _idleColor = Color(0xFF2563EB);
+  static const _resultHold = Duration(seconds: 4);
+  DateTime _lastActivityAt = DateTime.now();
+
   // Status & Event State
   String _status = 'Menginisialisasi kamera...';
-  String _eventTitle = 'MENUNGGU PENGENALAN';
-  Color _eventColor = const Color(0xFF2563EB);
-  String _eventMessage = 'Menunggu wajah terdeteksi.';
+  String _eventTitle = _idleTitle;
+  Color _eventColor = _idleColor;
+  String _eventMessage = _idleMessage;
 
   // Information Panel State
   String _nama = '-';
@@ -224,7 +231,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await controller.initialize();
       if (!mounted) return;
 
-      setState(() => _status = 'Kamera aktif (${camera.lensDirection.name})');
+      setState(() => _status = 'Kamera aktif');
 
       await controller.startImageStream(_processCameraFrame);
     } catch (e) {
@@ -274,12 +281,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (faces.isEmpty) {
         FaceRecognizer.instance.resetVotes();
+        _resetWhenIdle();
         return;
       }
+      _lastActivityAt = DateTime.now();
 
       // Ambil wajah terbesar
-      faces.sort((a, b) => (b.boundingBox.width * b.boundingBox.height)
-          .compareTo(a.boundingBox.width * a.boundingBox.height));
+      faces.sort(
+        (a, b) => (b.boundingBox.width * b.boundingBox.height).compareTo(
+          a.boundingBox.width * a.boundingBox.height,
+        ),
+      );
       final primaryFace = faces.first;
 
       // 1. Luruskan wajah ke template SFace dari 5 landmark ML Kit, langsung
@@ -328,8 +340,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _eventTitle = 'UNKNOWN';
           _eventColor = const Color(0xFFDC2626);
           _confidenceValue = 0;
-          _eventMessage =
-              'Wajah tidak cocok (dist: ${result?.distance.toStringAsFixed(3) ?? '-'})';
+          _eventMessage = 'Wajah tidak dikenali.';
         });
         return;
       }
@@ -364,6 +375,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _handleAttendance(String personId, double confidence) async {
+    // Sesi rapat aktif: catat lewat `hadir`, bukan `tendik/info-person`.
+    final session = _rapat;
+    if (session != null) {
+      await _handleRapatAttendance(session.idsesi, personId);
+      return;
+    }
+
     setState(() {
       _eventTitle = 'MENGIRIM PRESENSI...';
       _eventColor = const Color(0xFF2563EB);
@@ -372,6 +390,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final apiRes = await _apiService.sendPersonId(personId);
     if (!mounted) return;
+    _lastActivityAt = DateTime.now();
 
     final timeStr = DateTime.now().toString().substring(11, 19);
     final streams = apiRes.data?['streams'] as Map<String, dynamic>?;
@@ -433,6 +452,116 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Presensi saat sesi rapat aktif: wajah yang dikenali dicatat lewat `hadir`.
+  /// Status `sudah` hanya memperbarui panel dan banner, tanpa log atau pop-up,
+  /// karena server membalas `sudah` setiap kali cooldown 30 detik habis.
+  Future<void> _handleRapatAttendance(String idsesi, String personId) async {
+    setState(() {
+      _eventTitle = 'MENGIRIM PRESENSI...';
+      _eventColor = const Color(0xFF2563EB);
+      _eventMessage = 'Mengirim identifikasi ke server...';
+    });
+
+    final res = await _rapatApi.hadir(idsesi: idsesi, idpersonal: personId);
+    if (!mounted) return;
+    _lastActivityAt = DateTime.now();
+
+    final timeStr = DateTime.now().toString().substring(11, 19);
+    final hadir = res.ok ? RapatHadir.fromStreams(res.streams) : null;
+
+    if (hadir == null) {
+      // Termasuk 409 (presensi belum dibuka atau sesi tertutup): tampilkan
+      // `message` dari server. Pengecekan lewat `info` menyusul di prioritas 2.
+      final message = res.ok ? 'Respons server tidak lengkap.' : res.message;
+      setState(() {
+        _eventTitle = 'GAGAL API';
+        _eventColor = const Color(0xFFDC2626);
+        _eventMessage = message;
+
+        _dailyLog.insert(
+          0,
+          DailyLogEntry(
+            time: timeStr,
+            idPegawai: '-',
+            nama: 'Presensi gagal',
+            status: 'Gagal',
+            message: message,
+          ),
+        );
+      });
+      return;
+    }
+
+    final waktu = hadir.waktu ?? DateTime.now();
+    final waktuStr =
+        '${IndonesianDate.time(waktu, separator: '.')} '
+        '${IndonesianDate.zone(waktu.timeZoneOffset)}';
+    final namaStr = hadir.nama;
+    final nipStr = hadir.nomorPegawai;
+    final isTamu = hadir.status == RapatHadirStatus.tamu;
+    final isSudah = hadir.status == RapatHadirStatus.sudah;
+
+    setState(() {
+      _nama = namaStr;
+      _nomorPegawai = nipStr;
+      _unitKerja = hadir.unit;
+      _waktu = waktuStr;
+
+      if (isSudah) {
+        _eventTitle = 'SUDAH TERCATAT';
+        _eventColor = const Color(0xFFD97706);
+      } else if (isTamu) {
+        _eventTitle = 'TAMU';
+        _eventColor = const Color(0xFF2563EB);
+      } else {
+        _eventTitle = 'BERHASIL';
+        _eventColor = const Color(0xFF16A34A);
+      }
+      _eventMessage = res.message;
+
+      if (!isSudah) {
+        _dailyLog.insert(
+          0,
+          DailyLogEntry(
+            time: timeStr,
+            idPegawai: nipStr,
+            nama: namaStr,
+            status: isTamu ? 'Tamu' : 'Berhasil',
+          ),
+        );
+      }
+    });
+
+    if (!isSudah) {
+      _showAttendanceSuccessDialog(
+        nama: namaStr == '-' ? 'Presensi Anda telah tercatat' : namaStr,
+        waktu: waktu,
+      );
+    }
+  }
+
+  /// Mengembalikan layar ke kondisi menunggu bila tidak ada wajah selama
+  /// [_resultHold] sejak aktivitas terakhir. Nama dan NIP ikut dikosongkan supaya
+  /// data pribadi tidak terus tampil saat tidak ada orang di depan kamera.
+  /// Saat permintaan presensi masih berjalan, layar tidak diubah.
+  void _resetWhenIdle() {
+    if (_eventTitle == _idleTitle || _eventTitle == 'MENGIRIM PRESENSI...') {
+      return;
+    }
+    if (DateTime.now().difference(_lastActivityAt) < _resultHold) return;
+
+    setState(() {
+      _eventTitle = _idleTitle;
+      _eventColor = _idleColor;
+      _eventMessage = _idleMessage;
+      _confidenceValue = 0;
+      _nama = '-';
+      _nomorPegawai = '-';
+      _unitKerja = '-';
+      _waktu = '-';
+    });
+  }
+
   /// Pop-up presensi berhasil. Tidak menumpuk: bila satu masih terbuka,
   /// presensi berikutnya hanya masuk ke log.
   Future<void> _showAttendanceSuccessDialog({
@@ -472,7 +601,9 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: isLandscape ? _buildLandscapeBody() : _buildPortraitBody(),
+                child: isLandscape
+                    ? _buildLandscapeBody()
+                    : _buildPortraitBody(),
               ),
             ),
             _buildFooter(),
@@ -527,6 +658,12 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       child: Row(
         children: [
+          IconButton(
+            tooltip: 'Kembali ke menu',
+            onPressed: () => Navigator.of(context).maybePop(),
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+          ),
+          const SizedBox(width: 4),
           Image.asset(
             AppConfig.logoAsset,
             width: 46,
@@ -591,7 +728,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ===== KARTU UMUM =====
-  Widget _card({required String title, String? subtitle, required Widget child}) {
+  Widget _card({
+    required String title,
+    String? subtitle,
+    required Widget child,
+  }) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -713,6 +854,8 @@ class _HomeScreenState extends State<HomeScreen> {
     'MEMVERIFIKASI' => 'Memverifikasi',
     'MENGIRIM PRESENSI...' => 'Mengirim',
     'UNKNOWN' => 'Tidak Dikenal',
+    'TAMU' => 'Tamu',
+    'SUDAH TERCATAT' => 'Sudah',
     'GAGAL API' => 'Gagal',
     'ERROR PIPELINE' => 'Error',
     _ => 'Menunggu',
@@ -744,7 +887,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Row(
           children: [
             Text(
-              'Confidence',
+              'Kemiripan wajah',
               style: TextStyle(fontSize: 12, color: _palette.muted),
             ),
             const Spacer(),
@@ -817,7 +960,11 @@ class _HomeScreenState extends State<HomeScreen> {
         color: const Color(0xFF05080D),
         borderRadius: BorderRadius.circular(14),
         boxShadow: const [
-          BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 3)),
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
         ],
       ),
       clipBehavior: Clip.antiAlias,

@@ -7,7 +7,9 @@ plugins {
 
 android {
     namespace = "id.ac.unej.face_presensi"
-    compileSdk = flutter.compileSdkVersion
+    // permission_handler_android menuntut compileSdk 37. AGP menolak build bila
+    // :app masih 36 (checkDebugAarMetadata), jadi dinaikkan secara eksplisit.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

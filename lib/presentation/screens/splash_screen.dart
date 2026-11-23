@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/config/app_config.dart';
 import '../../core/face/face_recognizer.dart';
 import 'menu_screen.dart';
 
@@ -12,6 +13,9 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  // Hijau UPATIK, sama dengan header dan layar lain.
+  static const _brandGreen = Color(0xFF2FA23A);
+
   double _progress = 0;
   int _total = 0;
   String? _error;
@@ -75,10 +79,18 @@ class _SplashScreenState extends State<SplashScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Image.asset(
+                AppConfig.logoAsset,
+                width: 56,
+                height: 56,
+                errorBuilder: (context, error, stackTrace) =>
+                    const Icon(Icons.school, color: Colors.amber, size: 48),
+              ),
+              const SizedBox(height: 12),
               const Text(
                 'VISION UNEJ',
                 style: TextStyle(
-                  color: Color(0xFF3B82F6),
+                  color: _brandGreen,
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1.2,
@@ -101,9 +113,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 child: LinearProgressIndicator(
                   value: _error != null ? null : _progress,
                   backgroundColor: const Color(0xFF333333),
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                    Color(0xFF3B82F6),
-                  ),
+                  valueColor: const AlwaysStoppedAnimation<Color>(_brandGreen),
                 ),
               ),
               const SizedBox(height: 8),

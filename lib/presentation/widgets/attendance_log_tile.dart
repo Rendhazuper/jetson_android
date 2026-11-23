@@ -23,15 +23,30 @@ class AttendanceLogTile extends StatelessWidget {
 
   static const _green = Color(0xFF2FA23A);
   static const _red = Color(0xFFDC2626);
+  static const _blue = Color(0xFF2563EB);
 
-  bool get _isOk => entry.status == 'Berhasil';
+  /// Hanya `Gagal` yang dianggap gagal. `Berhasil` dan `Tamu` sama-sama
+  /// tercatat, tetapi `Tamu` diberi warna dan ikon sendiri.
+  bool get _isFail => entry.status == 'Gagal';
+
+  Color get _accent => switch (entry.status) {
+    'Gagal' => _red,
+    'Tamu' => _blue,
+    _ => _green,
+  };
+
+  IconData get _icon => switch (entry.status) {
+    'Gagal' => Icons.cancel,
+    'Tamu' => Icons.person_outline,
+    _ => Icons.check_circle,
+  };
 
   @override
   Widget build(BuildContext context) {
     final p = AppPalette.of(context);
-    final accent = _isOk ? _green : _red;
+    final accent = _accent;
     final background = isLatest
-        ? (_isOk ? p.logLatestOk : p.logLatestFail)
+        ? (_isFail ? p.logLatestFail : p.logLatestOk)
         : p.logRow;
     final ink = p.ink;
     final muted = p.muted;
@@ -93,7 +108,7 @@ class AttendanceLogTile extends StatelessWidget {
                         color: ink,
                       ),
                     ),
-                    if (!_isOk && message != null && message.isNotEmpty)
+                    if (_isFail && message != null && message.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 3),
                         child: Text(
@@ -114,7 +129,11 @@ class AttendanceLogTile extends StatelessWidget {
                             style: TextStyle(fontSize: 12, color: muted),
                           ),
                         ),
-                        _StatusChip(isOk: _isOk, color: accent),
+                        _StatusChip(
+                          label: entry.status,
+                          icon: _icon,
+                          color: accent,
+                        ),
                       ],
                     ),
                   ],
@@ -129,9 +148,14 @@ class AttendanceLogTile extends StatelessWidget {
 }
 
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.isOk, required this.color});
+  const _StatusChip({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
 
-  final bool isOk;
+  final String label;
+  final IconData icon;
   final Color color;
 
   @override
@@ -145,14 +169,10 @@ class _StatusChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            isOk ? Icons.check_circle : Icons.cancel,
-            size: 15,
-            color: color,
-          ),
+          Icon(icon, size: 15, color: color),
           const SizedBox(width: 4),
           Text(
-            isOk ? 'Berhasil' : 'Gagal',
+            label,
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.bold,
