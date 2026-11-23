@@ -43,12 +43,21 @@ class FaceRecognizer {
   int get knownCount => _knownNames.length;
 
   /// Memuat model SFace ONNX dan gallery encoding dari asset.
-  Future<void> init() async {
-    if (isReady) return;
+  ///
+  /// [onProgress] dipanggil dengan progres 0.0–1.0 dan jumlah wajah di gallery
+  /// (0 sebelum gallery terbaca).
+  Future<void> init({
+    void Function(double progress, int total)? onProgress,
+  }) async {
+    if (isReady) {
+      onProgress?.call(1.0, knownCount);
+      return;
+    }
 
     OrtEnv.instance.init();
+    onProgress?.call(0.0, 0);
 
-    // 1. Muat model SFace
+    // 1. Muat model SFace (0% – 10%)
     final sessionOptions = OrtSessionOptions();
     final modelBytes = await rootBundle.load(AppConfig.sfaceModelAsset);
     _session = OrtSession.fromBuffer(
@@ -59,24 +68,34 @@ class FaceRecognizer {
       sessionOptions,
     );
     sessionOptions.release();
+    onProgress?.call(0.1, 0);
 
-    // 2. Muat galeri encodings.json
+    // 2. Muat galeri encodings.json (10% – 100%)
     final jsonStr = await rootBundle.loadString(AppConfig.encodingsAsset);
     final data = jsonDecode(jsonStr) as Map<String, dynamic>;
 
     final rawEncodings = data['encodings'] as List<dynamic>;
     final rawNames = data['names'] as List<dynamic>;
+    final total = rawNames.length;
 
     _knownEncodings.clear();
     _knownNames.clear();
+    onProgress?.call(0.1, total);
 
-    for (var i = 0; i < rawNames.length; i++) {
+    for (var i = 0; i < total; i++) {
       final vec = (rawEncodings[i] as List<dynamic>)
           .map((e) => (e as num).toDouble())
           .toList();
       _knownEncodings.add(vec);
       _knownNames.add(rawNames[i].toString());
+
+      if (onProgress != null && (i % 50 == 0 || i == total - 1)) {
+        onProgress(0.1 + 0.9 * (i + 1) / total, total);
+        // Beri kesempatan UI menggambar ulang progress bar.
+        await Future<void>.delayed(Duration.zero);
+      }
     }
+    onProgress?.call(1.0, total);
   }
 
   /// Ekstraksi 128-d feature vector dari 112x112 RGB (Float32List panjang 37632 [1, 3, 112, 112]).
@@ -84,13 +103,17 @@ class FaceRecognizer {
     final session = _session;
     if (session == null) return null;
 
-    final inputTensor = OrtValueTensor.createTensorWithDataList(
-      nchwFloats,
-      [1, 3, AppConfig.faceSize, AppConfig.faceSize],
-    );
+    final inputTensor = OrtValueTensor.createTensorWithDataList(nchwFloats, [
+      1,
+      3,
+      AppConfig.faceSize,
+      AppConfig.faceSize,
+    ]);
 
     final runOptions = OrtRunOptions();
-    final outputs = session.run(runOptions, {session.inputNames[0]: inputTensor});
+    final outputs = session.run(runOptions, {
+      session.inputNames[0]: inputTensor,
+    });
 
     inputTensor.release();
     runOptions.release();

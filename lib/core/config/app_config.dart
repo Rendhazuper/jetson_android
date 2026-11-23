@@ -3,7 +3,8 @@ class AppConfig {
   AppConfig._();
 
   // ===== PATH / ASSET =====
-  static const String sfaceModelAsset = 'assets/models/face_recognition_sface.onnx';
+  static const String sfaceModelAsset =
+      'assets/models/face_recognition_sface.onnx';
   static const String encodingsAsset = 'assets/encodings.json';
   static const String logoAsset = 'assets/images/unej_logo.png';
 
@@ -55,10 +56,27 @@ class AppConfig {
   // JANGAN menonaktifkan verifikasi TLS secara default.
   static const String personInfoApiUrl = String.fromEnvironment(
     'PERSON_INFO_API_URL',
-    defaultValue: 'https://api-sister.unej.ac.id/perkuliahan/tendik/info-person',
+    defaultValue:
+        'https://api-sister.unej.ac.id/perkuliahan/tendik/info-person',
   );
   static const int personInfoApiTimeoutSeconds = 5;
 
   /// Cooldown kirim ulang per orang (setara gate 30 detik di Python).
   static const int attendanceCooldownSeconds = 30;
+
+  // ===== API PRESENSI RAPAT (docs/api docs/API_UNEJ_VISION.md) =====
+  // Base URL tanpa garis miring di akhir. Timpa lewat
+  // `--dart-define=RAPAT_API_BASE_URL=<url>`. Nilai default mengasumsikan host
+  // yang sama dengan person API; pastikan sesuai dengan server rapat.
+  static const String rapatApiBaseUrl = String.fromEnvironment(
+    'RAPAT_API_BASE_URL',
+    defaultValue: 'https://api-sister.unej.ac.id/perkuliahan/vision/rapat',
+  );
+
+  /// Nama perangkat yang tetap, dipakai di `mulai` agar sesi bisa dilanjutkan.
+  static const String rapatPerangkatName = String.fromEnvironment(
+    'RAPAT_PERANGKAT_NAME',
+    defaultValue: 'Tablet Vision UNEJ',
+  );
+  static const int rapatApiTimeoutSeconds = 10;
 }

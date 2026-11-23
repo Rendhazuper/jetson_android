@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import '../../core/config/app_config.dart';
+import '../../core/theme/app_palette.dart';
+import '../../data/rapat_api_service.dart';
+import '../../data/rapat_session_store.dart';
+import '../widgets/rapat_session_card.dart';
 import '../../core/face/camera_utils.dart';
 import '../../core/face/face_preprocessor.dart';
 import '../../core/face/face_recognizer.dart';
@@ -36,6 +40,12 @@ class _HomeScreenState extends State<HomeScreen> {
   );
   final PersonApiService _apiService = PersonApiService();
 
+  // Sesi presensi rapat (API rapat). Kode rapat tidak disimpan, hanya idsesi.
+  final RapatApiService _rapatApi = RapatApiService();
+  final RapatSessionStore _rapatStore = RapatSessionStore();
+  RapatSession? _rapat;
+  bool _rapatBusy = false;
+
   bool _isProcessingFrame = false;
   DateTime _lastProcessTime = DateTime.now();
 
@@ -59,9 +69,9 @@ class _HomeScreenState extends State<HomeScreen> {
   // Palet UPATIK
   static const _green = Color(0xFF2FA23A);
   static const _greenDark = Color(0xFF1F7F2B);
-  static const _pageBackground = Color(0xFFE8EBEE);
-  static const _ink = Color(0xFF1F2937);
-  static const _muted = Color(0xFF6B7280);
+
+  // Warna netral (latar, kartu, teks) mengikuti mode tema terang/gelap.
+  AppPalette get _palette => AppPalette.of(context);
 
   @override
   void initState() {
@@ -78,22 +88,120 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     _initCamera();
+    _restoreRapatSession();
+  }
+
+  // ===== SESI RAPAT =====
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Melanjutkan sesi tersimpan saat aplikasi dibuka ulang.
+  Future<void> _restoreRapatSession() async {
+    final saved = await _rapatStore.load();
+    if (!mounted || saved == null) return;
+    setState(() => _rapat = saved);
+
+    final res = await _rapatApi.info(saved.idsesi);
+    if (!mounted || _rapatBusy) return;
+
+    if (res.status == 404 || res.status == 409) {
+      // Sesi sudah tertutup (diakhiri, otomatis, atau rapat dibatalkan).
+      await _rapatStore.clear();
+      if (!mounted) return;
+      setState(() => _rapat = null);
+      _showSnack('Sesi rapat sebelumnya sudah ditutup.');
+      return;
+    }
+
+    final updated = res.ok ? RapatSession.fromStreams(res.streams) : null;
+    if (updated != null) {
+      await _rapatStore.save(updated);
+      if (!mounted) return;
+      setState(() => _rapat = updated);
+    }
+    // Gagal karena jaringan: sesi tetap tersimpan dan dicek lagi nanti.
+  }
+
+  Future<void> _mulaiRapat() async {
+    final kode = await showKodeRapatDialog(
+      context,
+      title: 'Mulai Sesi Rapat',
+      actionLabel: 'Mulai',
+    );
+    if (kode == null || !mounted) return;
+
+    setState(() => _rapatBusy = true);
+    final res = await _rapatApi.mulai(kode);
+    if (!mounted) return;
+
+    final session = res.ok ? RapatSession.fromStreams(res.streams) : null;
+    if (session != null) {
+      await _rapatStore.save(session);
+      if (!mounted) return;
+      setState(() {
+        _rapat = session;
+        _rapatBusy = false;
+      });
+      _showSnack(res.message);
+    } else {
+      setState(() => _rapatBusy = false);
+      _showSnack(res.ok ? 'Respons server tidak lengkap.' : res.message);
+    }
+  }
+
+  Future<void> _akhiriRapat() async {
+    final session = _rapat;
+    if (session == null) return;
+
+    final kode = await showKodeRapatDialog(
+      context,
+      title: 'Akhiri Sesi Rapat',
+      actionLabel: 'Akhiri',
+    );
+    if (kode == null || !mounted) return;
+
+    setState(() => _rapatBusy = true);
+    final res = await _rapatApi.akhiri(idsesi: session.idsesi, kode: kode);
+    if (!mounted) return;
+
+    // 409: sesi sudah tertutup di server, jadi keluar dari mode sesi juga.
+    if (res.ok || res.status == 409) {
+      await _rapatStore.clear();
+      if (!mounted) return;
+      setState(() {
+        _rapat = null;
+        _rapatBusy = false;
+      });
+      final s = res.streams;
+      _showSnack(
+        res.ok && s != null
+            ? 'Sesi diakhiri. Hadir: ${s['jml_hadir'] ?? '-'}, '
+                  'tamu: ${s['jml_tamu'] ?? '-'}.'
+            : res.message,
+      );
+    } else {
+      setState(() => _rapatBusy = false);
+      _showSnack(res.message);
+    }
   }
 
   Future<void> _initCamera() async {
     try {
-      _cameras = await availableCameras();
+      // Hanya kamera depan (front-facing) yang dipakai; kamera belakang di-disable.
+      final allCameras = await availableCameras();
+      _cameras = allCameras
+          .where((c) => c.lensDirection == CameraLensDirection.front)
+          .toList();
       if (_cameras.isEmpty) {
-        setState(() => _status = 'Kamera tidak ditemukan');
+        setState(() => _status = 'Kamera depan tidak ditemukan');
         return;
       }
 
-      // Default gunakan kamera depan bila ada (front-facing)
-      final frontIdx = _cameras.indexWhere(
-        (c) => c.lensDirection == CameraLensDirection.front,
-      );
-      _cameraIndex = frontIdx != -1 ? frontIdx : 0;
-
+      _cameraIndex = 0;
       await _startCamera();
     } catch (e) {
       setState(() => _status = 'Gagal inisialisasi kamera: $e');
@@ -101,6 +209,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _startCamera() async {
+    if (_cameras.isEmpty) return;
     final camera = _cameras[_cameraIndex];
     final controller = CameraController(
       camera,
@@ -121,13 +230,6 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       setState(() => _status = 'Gagal membuka kamera: $e');
     }
-  }
-
-  Future<void> _switchCamera() async {
-    if (_cameras.length < 2) return;
-    await _stopCamera();
-    _cameraIndex = (_cameraIndex + 1) % _cameras.length;
-    await _startCamera();
   }
 
   Future<void> _stopCamera() async {
@@ -350,7 +452,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _cameraController?.dispose();
     _faceDetector.close();
-    FaceRecognizer.instance.dispose();
+    _rapatApi.dispose();
+    // FaceRecognizer dibiarkan hidup: model & galeri dimuat di splash dan
+    // dipakai ulang saat kembali ke menu lalu masuk lagi.
     super.dispose();
   }
 
@@ -360,7 +464,7 @@ class _HomeScreenState extends State<HomeScreen> {
         MediaQuery.of(context).orientation == Orientation.landscape;
 
     return Scaffold(
-      backgroundColor: _pageBackground,
+      backgroundColor: _palette.pageBackground,
       body: SafeArea(
         child: Column(
           children: [
@@ -491,7 +595,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _palette.card,
         borderRadius: BorderRadius.circular(14),
         boxShadow: const [
           BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 2)),
@@ -514,10 +618,10 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
-                    color: _ink,
+                    color: _palette.ink,
                   ),
                 ),
               ),
@@ -528,7 +632,7 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.only(left: 12, top: 2),
               child: Text(
                 subtitle,
-                style: const TextStyle(fontSize: 11, color: _muted),
+                style: TextStyle(fontSize: 11, color: _palette.muted),
               ),
             ),
           const SizedBox(height: 10),
@@ -557,6 +661,13 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 12),
           _card(title: 'Status', child: _buildStatusContent()),
+          const SizedBox(height: 12),
+          RapatSessionCard(
+            session: _rapat,
+            busy: _rapatBusy,
+            onStart: _mulaiRapat,
+            onEnd: _akhiriRapat,
+          ),
         ],
       ),
     );
@@ -572,7 +683,7 @@ class _HomeScreenState extends State<HomeScreen> {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: const Color(0xFFE8F5E9),
+              color: _palette.greenSoft,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, size: 19, color: _green),
@@ -586,7 +697,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: TextStyle(
                   fontSize: bold ? 15 : 13,
                   fontWeight: bold ? FontWeight.bold : FontWeight.w500,
-                  color: _ink,
+                  color: _palette.ink,
                 ),
               ),
             ),
@@ -632,17 +743,17 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 14),
         Row(
           children: [
-            const Text(
+            Text(
               'Confidence',
-              style: TextStyle(fontSize: 12, color: _muted),
+              style: TextStyle(fontSize: 12, color: _palette.muted),
             ),
             const Spacer(),
             Text(
               percent,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.bold,
-                color: _ink,
+                color: _palette.ink,
               ),
             ),
           ],
@@ -654,7 +765,7 @@ class _HomeScreenState extends State<HomeScreen> {
             value: _confidenceValue.clamp(0.0, 1.0),
             minHeight: 8,
             color: _green,
-            backgroundColor: const Color(0xFFE5E7EB),
+            backgroundColor: _palette.track,
           ),
         ),
       ],
@@ -790,13 +901,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (_cameras.length > 1)
-          _cameraButton(
-            icon: Icons.flip_camera_android,
-            tooltip: 'Ganti Kamera',
-            onPressed: _switchCamera,
-          ),
-        const SizedBox(width: 6),
         _cameraButton(
           icon: running ? Icons.stop : Icons.play_arrow,
           tooltip: running ? 'Hentikan' : 'Mulai',

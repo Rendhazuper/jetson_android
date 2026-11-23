@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_palette.dart';
 import '../../data/daily_log_entry.dart';
 import 'indonesian_date.dart';
 
@@ -22,17 +23,18 @@ class AttendanceLogTile extends StatelessWidget {
 
   static const _green = Color(0xFF2FA23A);
   static const _red = Color(0xFFDC2626);
-  static const _ink = Color(0xFF1F2937);
-  static const _muted = Color(0xFF6B7280);
 
   bool get _isOk => entry.status == 'Berhasil';
 
   @override
   Widget build(BuildContext context) {
+    final p = AppPalette.of(context);
     final accent = _isOk ? _green : _red;
     final background = isLatest
-        ? (_isOk ? const Color(0xFFF0FAF1) : const Color(0xFFFEF2F2))
-        : const Color(0xFFF9FAFB);
+        ? (_isOk ? p.logLatestOk : p.logLatestFail)
+        : p.logRow;
+    final ink = p.ink;
+    final muted = p.muted;
     final zoneLabel =
         zone ?? IndonesianDate.zone(DateTime.now().timeZoneOffset);
     final hasNip = entry.idPegawai.isNotEmpty && entry.idPegawai != '-';
@@ -55,12 +57,12 @@ class AttendanceLogTile extends StatelessWidget {
                     if (hasNip)
                       Row(
                         children: [
-                          const Text(
+                          Text(
                             'NIP',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
-                              color: _muted,
+                              color: muted,
                               letterSpacing: 0.5,
                             ),
                           ),
@@ -70,10 +72,10 @@ class AttendanceLogTile extends StatelessWidget {
                               entry.idPegawai,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: _ink,
+                                color: ink,
                                 letterSpacing: 0.3,
                               ),
                             ),
@@ -85,10 +87,10 @@ class AttendanceLogTile extends StatelessWidget {
                       entry.nama,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
-                        color: _ink,
+                        color: ink,
                       ),
                     ),
                     if (!_isOk && message != null && message.isNotEmpty)
@@ -104,12 +106,12 @@ class AttendanceLogTile extends StatelessWidget {
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        const Icon(Icons.schedule, size: 14, color: _muted),
+                        Icon(Icons.schedule, size: 14, color: muted),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
                             '${entry.time} $zoneLabel',
-                            style: const TextStyle(fontSize: 12, color: _muted),
+                            style: TextStyle(fontSize: 12, color: muted),
                           ),
                         ),
                         _StatusChip(isOk: _isOk, color: accent),

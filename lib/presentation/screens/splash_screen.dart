@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../core/face/face_recognizer.dart';
-import 'home_screen.dart';
+import 'menu_screen.dart';
 
 /// Layar splash / loading — padanan dari `SplashScreen` di `app_tkinter.py`.
-/// Memuat model SFace ONNX dan data wajah ke memori sebelum layar utama tampil.
+/// Memuat model SFace ONNX dan data wajah ke memori sebelum menu utama tampil.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -12,7 +12,9 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  String _status = 'Memuat model deteksi wajah...';
+  double _progress = 0;
+  int _total = 0;
+  String? _error;
 
   @override
   void initState() {
@@ -24,29 +26,41 @@ class _SplashScreenState extends State<SplashScreen> {
     try {
       await Future<void>.delayed(const Duration(milliseconds: 300));
       if (!mounted) return;
-      setState(() => _status = 'Memuat data wajah...');
 
-      await FaceRecognizer.instance.init();
+      await FaceRecognizer.instance.init(
+        onProgress: (progress, total) {
+          if (!mounted) return;
+          setState(() {
+            _progress = progress;
+            _total = total;
+          });
+        },
+      );
 
       if (!mounted) return;
-      final count = FaceRecognizer.instance.knownCount;
-      setState(() => _status = 'Load $count data wajah...');
-
+      setState(() => _progress = 1.0);
       await Future<void>.delayed(const Duration(milliseconds: 500));
       if (!mounted) return;
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
+        MaterialPageRoute<void>(builder: (_) => const MenuScreen()),
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _status = 'Gagal memuat model: $e');
+      setState(() => _error = 'Gagal memuat model: $e');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final percent = (_progress * 100).round();
+    final subtitle =
+        _error ??
+        (_total > 0
+            ? 'Memuat data $_total wajah...'
+            : 'Memuat model deteksi wajah...');
+
     return Scaffold(
       backgroundColor: const Color(0xFF181818),
       body: Center(
@@ -62,30 +76,40 @@ class _SplashScreenState extends State<SplashScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'FACE RECOGNITION',
+                'VISION UNEJ',
                 style: TextStyle(
                   color: Color(0xFF3B82F6),
-                  fontSize: 14,
+                  fontSize: 20,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1.2,
                 ),
               ),
               const SizedBox(height: 16),
               Text(
-                _status,
+                subtitle,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: _error != null
+                      ? const Color(0xFFF87171)
+                      : Colors.white,
                   fontSize: 12,
                 ),
               ),
               const SizedBox(height: 20),
-              const SizedBox(
+              SizedBox(
                 height: 4,
                 child: LinearProgressIndicator(
-                  backgroundColor: Color(0xFF333333),
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF3B82F6)),
+                  value: _error != null ? null : _progress,
+                  backgroundColor: const Color(0xFF333333),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    Color(0xFF3B82F6),
+                  ),
                 ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$percent%',
+                style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 11),
               ),
             ],
           ),

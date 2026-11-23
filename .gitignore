@@ -40,3 +40,4 @@ assets/encodings.json
 .DS_Store
 Thumbs.db
 /assets/raw-faces-data/
+/docs
